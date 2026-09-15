@@ -124,6 +124,18 @@
   }
   tr.dual-board { background: rgba(255,214,10,0.10); }
   .board-note { color: var(--muted); font-size: 0.8rem; margin: 4px 0 12px; }
+  /* §AE-1a/§AE-5b：待汰除/未經驗證系統的頁面頂端banner。unverified=淺黃(尚未
+     驗證，非已知錯誤)，refuted=淺紅(已被回測數據推翻)，語意不同、顏色分開。 */
+  .deprecated-banner {
+    padding: 10px 14px; margin: 4px 0 12px; border-radius: 8px; font-size: 0.85rem;
+    line-height: 1.6; border: 1px solid;
+  }
+  .deprecated-banner.unverified {
+    background: rgba(255,214,10,0.10); border-color: rgba(255,214,10,0.4); color: var(--text);
+  }
+  .deprecated-banner.refuted {
+    background: rgba(255,59,48,0.10); border-color: rgba(255,59,48,0.4); color: var(--text);
+  }
   tr.group-header td {
     background: var(--card); font-weight: 700; color: var(--accent);
     position: sticky; top: 33px;
@@ -218,8 +230,21 @@
   <div class="meta loading" id="meta">載入中...</div>
   <div class="kpi-row" id="kpi-row">
     <div class="kpi-card"><div class="kpi-value" id="kpi-total">–</div><div class="kpi-label">觀察股池</div></div>
-    <div class="kpi-card"><div class="kpi-value" id="kpi-alert">–</div><div class="kpi-label" id="kpi-alert-label">今日警示</div></div>
-    <div class="kpi-card"><div class="kpi-value" id="kpi-dual">–</div><div class="kpi-label">雙榜交集</div></div>
+    <!-- §AE-4c（2026-09-09）先隱藏(display:none)：這張卡的資料來源是scoring
+         (long_alert_count/short_alert_count)，scoring已被回測數據推翻要停用，
+         停用之後這裡就沒有「警示」這回事、只會是一個永遠不變的數字，比隱藏
+         更容易誤導。JS/data key都還在，恢復時把display:none拿掉即可。 -->
+    <div class="kpi-card" style="display:none"><div class="kpi-value" id="kpi-alert">–</div><div class="kpi-label" id="kpi-alert-label">今日警示</div></div>
+    <!-- §AD-2（2026-09-09）先隱藏(display:none)，不是刪掉、也不是凍結顯示：
+         dual_board的本質是「兩個獨立系統都同意」的交集(評分警示 ∩ 動能軌RS強)，
+         若其中一半(評分)已凍結不再更新，交集會隨時間萎縮到無意義——擺在首頁
+         只會誤導。重新啟用的前提：等「動能軌 ∩ 型態狀態機第1~7級候選」的新版
+         做好，而且動能軌本身要先確認不是待汰除的加權評分機制(見§AD-1)。
+         data key(DATA.dual_board)跟JS函式(dualBoardSet())都還在，只是這張
+         KPI卡不渲染，之後要恢復只要把display:none拿掉即可。
+         §AE-3已把dualBoardSet()本身改成強制回傳空集合，連帶表格列的黃底標示
+         跟board-note說明文字也一起停用了，見該函式旁的註解。 -->
+    <div class="kpi-card" style="display:none"><div class="kpi-value" id="kpi-dual">–</div><div class="kpi-label">雙榜交集</div></div>
     <div class="kpi-card"><div class="kpi-value" id="kpi-disp">–</div><div class="kpi-label">處置中</div></div>
   </div>
 
@@ -323,6 +348,13 @@
   </div>
 
   <div class="layout" id="momentum-view" style="display:none">
+    <!-- §AE-1a（2026-09-09）「未經驗證」標記——注意文字用詞跟「the保守派」分頁
+         的「已推翻」標記(§AE-5b)不同：動能軌的MOMENTUM_WEIGHTS從未被回測驗證，
+         但也【沒有】被證明錯誤，跟已經被數據推翻的評分系統是不同狀態，不能用
+         同一段話，見§AE-0。 -->
+    <div class="deprecated-banner unverified">
+      ⚠️ 本榜的排序權重（MOMENTUM_WEIGHTS）未經回測校準，僅供排名參考，不代表已驗證的有效性。（此為程式碼自述的狀態，非事後推測）
+    </div>
     <div class="filter-panel" id="momentum-filter-panel">
       <button class="filter-panel-toggle" id="momentum-panel-toggle" type="button">篩選條件 <span class="chevron">▾</span></button>
       <div class="filter-group">
@@ -852,14 +884,21 @@ function renderKpis() {
   document.getElementById("kpi-disp").textContent = ((DATA.disposition && DATA.disposition.current_list) || []).length;
 }
 
+// §AE-3（2026-09-09）dualBoardSet()先強制回傳空集合，不是刪掉這個函式：
+// dual_board的本質是「兩個獨立系統都同意」的交集(評分警示 ∩ 動能軌RS強)，
+// 評分系統已被回測數據推翻要停用，若交集其中一半凍結成永不更新的舊名單，
+// 黃底標示會持續告訴使用者「這些很重要」，比一個凍結的數字更容易誤導
+// (視覺高亮的語意比純數字強)。這一個函式改了，KPI卡計數/表格黃底標示/
+// board-note文字三處會一起停用，不用分別改三個地方。恢復條件：等「動能軌
+// ∩ 型態狀態機第1~7級候選」的新版做好，而且動能軌本身先確認不是待汰除的
+// 加權評分機制(見§AD-1/§AE-1)。
 function dualBoardSet() {
-  return new Set((DATA.dual_board && DATA.dual_board[mode]) || []);
+  return new Set();
 }
 
 function updateBoardNote() {
-  const n = dualBoardSet().size;
   document.getElementById("board-note").textContent =
-    `雙榜交集（支撐軌警示 + 動能軌RS≥${DATA.rs_strong_percentile}，最強候選，兩榜都會黃底標示）：${n} 檔`;
+    "（雙榜交集功能已暫時隱藏，見§AE-3：評分系統待汰除，動能軌未經驗證）";
   document.getElementById("momentum-rs-label").textContent = `RS強勢（前${DATA.rs_strong_percentile}%）`;
   document.getElementById("momentum-near52w-label").textContent =
     mode === "long" ? "接近52週新高（≤3%）" : "接近52週新低（≤3%）";
