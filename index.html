@@ -115,6 +115,10 @@
     border: 1px solid #ff9500; color: #ff9500; font-size: 0.7rem; font-weight: 600; line-height: 1.5;
   }
   .holder-tag.bear { border-color: #34c759; color: #34c759; }
+  .new-increase-tag {
+    display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 999px;
+    border: 1px solid #ff3b30; color: #ff3b30; font-size: 0.7rem; font-weight: 600; line-height: 1.5;
+  }
   .chip-bullish { color: #ff9500; font-weight: 600; }
   .chip-bearish { color: #34c759; font-weight: 600; }
   .tag.mtag { background: rgba(255,59,48,0.14); color: #ff3b30; border-color: rgba(255,59,48,0.35); }
@@ -610,6 +614,16 @@
           <button type="button" data-tier="600張">600張</button>
           <button type="button" data-tier="400張">400張</button>
         </div>
+        <select id="chip-holder-window">
+          <option value="1" selected>近1週</option>
+          <option value="2">近2週</option>
+          <option value="3">近3週</option>
+          <option value="4">近4週</option>
+          <option value="5">近5週</option>
+          <option value="6">近6週</option>
+          <option value="7">近7週</option>
+          <option value="8">近8週</option>
+        </select>
       </div>
       <div class="table-wrap">
         <table id="tbl-chip-holder">
@@ -618,7 +632,7 @@
               <th data-key="stock_id">代號</th>
               <th data-key="name">名稱</th>
               <th data-key="group">族群</th>
-              <th data-key="change_pp">本週增減(pp)</th>
+              <th data-key="change_pp" id="th-chip-holder-change-pp">本週增減(pp)</th>
               <th data-key="retail_change_pp">散戶增減(pp)</th>
               <th data-key="margin_change_pct">融資增加比例</th>
               <th data-key="short_margin_ratio_pct">券資比</th>
@@ -751,6 +765,7 @@ let sortDirAnnotation = 1; // 1 asc：預設距離%由近到遠
 let maAndOr = "AND";
 let chipSection = "holder"; // "holder"/"flow"/"margin"，真金白銀頁面內的子頁籤，不用滑鼠滾動切換
 let chipHolderTier = "1000張";
+let chipHolderWindow = 1; // 大戶持股近N週視窗(1~8週)，預設1週=沿用原本的「本週增減」行為
 let chipFlowCategory = "total";
 let chipFlowWindow = 5;
 let chipMarginWindow = 5;
@@ -781,7 +796,7 @@ function currentUiState() {
     hiddenColsSupport: [...document.querySelectorAll(".col-toggle-support")].filter(c => !c.checked).map(c => c.value),
     hiddenColsMomentum: [...document.querySelectorAll(".col-toggle-momentum")].filter(c => !c.checked).map(c => c.value),
     hiddenColsMargin: [...document.querySelectorAll(".col-toggle-margin")].filter(c => !c.checked).map(c => c.value),
-    chipSection, chipHolderTier, chipFlowCategory, chipFlowWindow, chipMarginWindow,
+    chipSection, chipHolderTier, chipHolderWindow, chipFlowCategory, chipFlowWindow, chipMarginWindow,
   };
 }
 
@@ -825,6 +840,7 @@ function applyUiState(state) {
 
   chipSection = ["flow", "margin"].includes(state.chipSection) ? state.chipSection : "holder";
   chipHolderTier = state.chipHolderTier || "1000張";
+  chipHolderWindow = state.chipHolderWindow || 1;
   chipFlowCategory = state.chipFlowCategory || "total";
   chipFlowWindow = state.chipFlowWindow || 5;
   chipMarginWindow = state.chipMarginWindow || 5;
@@ -833,6 +849,7 @@ function applyUiState(state) {
   document.getElementById("chip-section-flow").style.display = (chipSection === "flow") ? "" : "none";
   document.getElementById("chip-section-margin").style.display = (chipSection === "margin") ? "" : "none";
   document.querySelectorAll("#chip-holder-tier-toggle button").forEach(b => b.classList.toggle("active", b.dataset.tier === chipHolderTier));
+  document.getElementById("chip-holder-window").value = String(chipHolderWindow);
   document.querySelectorAll("#chip-flow-category-toggle button").forEach(b => b.classList.toggle("active", b.dataset.category === chipFlowCategory));
   document.getElementById("chip-flow-window").value = String(chipFlowWindow);
   document.getElementById("chip-margin-window").value = String(chipMarginWindow);
@@ -1412,9 +1429,13 @@ function chipHolderRows() {
     .map(r => {
       const meta = DATA.stocks[r.stock_id] || {};
       const close = CLOSE_MAP[r.stock_id];
+      // 近N週視窗：week_windows是後端一次算好的{1:..,2:..,...,8:..}，沒有
+      // week_windows(舊資料/快照不足)就退回原本的change_pp(=近1週)，不當0。
+      const windowChangePp = r.week_windows ? r.week_windows[chipHolderWindow] : r.change_pp;
       return {
         ...r, name: meta.name || "", group: meta.group || "未分類", all_groups: meta.all_groups || [],
         close, price_tier: priceTierOf(close),
+        change_pp: (windowChangePp != null) ? windowChangePp : null,
       };
     })
     .filter(r => !q || r.stock_id.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
@@ -1469,7 +1490,7 @@ function renderChipHolder() {
       <td data-key="stock_id">${r.stock_id}</td>
       <td data-key="name">${r.name}</td>
       <td data-key="group">${r.group}</td>
-      <td data-key="change_pp">${r.change_pp != null ? (r.change_pp > 0 ? "+" : "") + r.change_pp : ""}${r.is_capital_anomaly ? " ⚠️" : ""}</td>
+      <td data-key="change_pp">${r.change_pp != null ? (r.change_pp > 0 ? "+" : "") + r.change_pp : ""}${r.is_capital_anomaly ? " ⚠️" : ""}${r.is_new_increase ? `<span class="new-increase-tag" title="連續${r.consecutive_increase_weeks}週增加">新增</span>` : ""}</td>
       <td data-key="retail_change_pp">${pctCellHtml(r.retail_change_pp, true)}</td>
       <td data-key="margin_change_pct">${r.margin_available === false ? "—" : (r.margin_change_pct != null ? (r.margin_change_pct > 0 ? "+" : "") + r.margin_change_pct + "%" : "—")}</td>
       <td data-key="short_margin_ratio_pct">${r.short_margin_ratio_pct != null ? r.short_margin_ratio_pct + "%" : "—"}${r.short_alert ? " 🔴🔴" : ""}</td>
@@ -1479,9 +1500,10 @@ function renderChipHolder() {
   }
   markSortedHeaders("#tbl-chip-holder", sortKeyChipHolder, sortDirChipHolder);
 
+  document.getElementById("th-chip-holder-change-pp").textContent = `近${chipHolderWindow}週增減(pp)`;
   document.getElementById("chip-holder-mode-note").textContent = (mode === "long"
-    ? "目前顯示：多方（本週大戶持股比例增加的個股，前50檔）"
-    : "目前顯示：空方（本週大戶持股比例減少的個股，前50檔）");
+    ? `目前顯示：多方（近${chipHolderWindow}週大戶持股比例增加的個股，前50檔；「新增」＝連續2週以上增加）`
+    : `目前顯示：空方（近${chipHolderWindow}週大戶持股比例減少的個股，前50檔）`);
 
   const bh = DATA.chip_board && DATA.chip_board.big_holder;
   document.getElementById("chip-holder-week-note").textContent = (bh && bh.available)
@@ -1855,6 +1877,11 @@ document.querySelectorAll("#chip-flow-category-toggle button").forEach(btn => {
     saveUiState();
     render();
   });
+});
+document.getElementById("chip-holder-window").addEventListener("change", (e) => {
+  chipHolderWindow = parseInt(e.target.value, 10);
+  saveUiState();
+  render();
 });
 document.getElementById("chip-flow-window").addEventListener("change", (e) => {
   chipFlowWindow = parseInt(e.target.value, 10);
